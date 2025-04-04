@@ -39,6 +39,8 @@ class TriceratopsControlClient(Node):
             time.sleep(0.01)
         elif(data.buttons[3]==1 and self.current_mode != "y"):
             self.current_mode = "y"
+            self.req.mode = "play"
+            self.future = self.cli.call_async(self.req)
             time.sleep(0.01)
         elif(data.buttons[0]==1 and self.current_mode != "a"):
             self.current_mode = "a"
@@ -53,8 +55,11 @@ class TriceratopsControlClient(Node):
             self.req.mode = "puppy_move"
             self.future = self.cli.call_async(self.req)
             time.sleep(0.01)
-        elif(data.buttons[9]==1 and self.current_mode != "start"):
-            self.current_mode = "start"
+        elif(data.buttons[6]==1 and self.current_mode != "start"):
+            self.current_mode = "open"
+            time.sleep(0.01)
+        elif(data.buttons[7]==1 and self.current_mode != "start"):
+            self.current_mode = "close"
             time.sleep(0.01)
         elif(data.axes[3]==1 and self.current_mode != "up"):
             self.current_mode = "up"

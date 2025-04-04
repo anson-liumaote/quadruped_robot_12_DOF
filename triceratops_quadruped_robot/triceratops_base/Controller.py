@@ -20,6 +20,7 @@ import sys, os
 sys.path.append(os.path.expanduser("~/UnityRos2_ws/src/unity_robotics_demo_msgs"))
 from unity_robotics_demo_msgs.msg import JointState
 from unity_robotics_demo_msgs.srv import UnityAnimateService
+from std_msgs.msg import String
 
 from math import pi
 import threading
@@ -89,13 +90,13 @@ class JointStatesSubscriber(Node):
         self.joint_names = []
         self.foot_endpoints = np.zeros([3, 4])
         self.lumbar_angles = np.zeros(2)
-        self.head_angles = np.zeros(2)
+        self.head_angles = np.zeros(1)
 
         self.get_logger().info('JointStates Subscriber has been started')
 
     def listener_callback(self, msg: JointState):
         self.joint_names = msg.name
-        self.foot_endpoints[:3, :] = [np.array(msg.z[:4]), np.array(msg.x[:4]), np.array(msg.y[:4])]
+        self.foot_endpoints[:3, :] = [np.array(msg.z[:4]), -np.array(msg.x[:4]), np.array(msg.y[:4])]
         self.foot_endpoints[0, :] += [0.09067, 0.09067, -0.09067, -0.09067]
         self.foot_endpoints[1, :] += [-0.085, 0.085, -0.085, 0.085]
         self.foot_endpoints[2, :] += [0.0, 0.0, 0.01, 0.01]
@@ -104,7 +105,27 @@ class JointStatesSubscriber(Node):
         if msg.z[5] > 180:
             msg.z[5] -= 360
         self.lumbar_angles = np.array([msg.z[4], -(msg.y[4]-90)])
-        self.head_angles = np.array([-msg.z[5]+30, msg.z[6]])
+        self.head_angles = np.array([-msg.z[5]+30])
+
+class BodyPoseSubscriber(Node):
+    def __init__(self):
+        super().__init__('body_pose_subscriber')
+        self.subscription = self.create_subscription(
+            String,
+            '/body_pose',
+            self.listener_callback,
+            10
+        )
+        self.mouth_angles = np.zeros(1)
+        self.get_logger().info('BodyPose Subscriber has been started')
+
+    def listener_callback(self, msg: String):
+        if msg.data == 'open':
+            self.mouth_angles[0] += 0.5
+        elif msg.data == 'close':
+            self.mouth_angles[0] -= 0.5
+        # print(self.mouth_angles)
+        
 
 class SwitchModeService(Node):
 
@@ -138,6 +159,7 @@ class RobotControl:
     def __init__(self):
         self.cmd_vel = CmdVelSubscriber()
         self.joint_states = JointStatesSubscriber()
+        self.body_pose = BodyPoseSubscriber()
         self.JointStatesPublisher = JointStatesPublisher()
         self.switch_mode_service = SwitchModeService()
         self.executor = rclpy.executors.SingleThreadedExecutor()
@@ -145,6 +167,7 @@ class RobotControl:
         self.executor.add_node(self.joint_states)
         self.executor.add_node(self.JointStatesPublisher)
         self.executor.add_node(self.switch_mode_service)
+        self.executor.add_node(self.body_pose)
 
         self.spin_thread = threading.Thread(target=self.executor.spin, daemon=True)
         self.spin_thread.start()
@@ -278,11 +301,12 @@ class RobotControl:
             )
 
             lumbar_pos = np.zeros(2)
-            head_pos = np.zeros(2)
+            head_pos = np.zeros(1)
+            mouth_pos = self.body_pose.mouth_angles * DEGREE_TO_SERVO
 
             # Only update motor positions if the goal has significantly changed
             if np.linalg.norm(goal - self.state.last_goal) > self.config.goal_change_threshold:
-                self.control_cmd.motor_position_control(goal, lumbar_pos, head_pos)
+                self.control_cmd.motor_position_control(goal, lumbar_pos, head_pos, mouth_pos)
                 self.state.last_goal = goal
             self.state.ticks += 1
 
@@ -315,9 +339,11 @@ class RobotControl:
             print(self.joint_states.head_angles)
             lumbar_pos = self.joint_states.lumbar_angles * DEGREE_TO_SERVO
             head_pos = self.joint_states.head_angles * DEGREE_TO_SERVO
+            mouth_pos = self.body_pose.mouth_angles * DEGREE_TO_SERVO
+            
             # Only update motor positions if the goal has significantly changed
             if np.linalg.norm(goal - self.state.last_goal) > self.config.goal_change_threshold:
-                self.control_cmd.motor_position_control(goal, lumbar_pos, head_pos)
+                self.control_cmd.motor_position_control(goal, lumbar_pos, head_pos, mouth_pos)
                 self.state.last_goal = goal
             self.state.ticks += 1
 
@@ -444,7 +470,7 @@ class ControlCmd:
     def reset_to_original(self, position=None):
         self.motor_position_control()
 
-    def motor_position_control(self, position=None, lumbar_pos=None, head_pos=None):
+    def motor_position_control(self, position=None, lumbar_pos=None, head_pos=None, mouth_pos=None):
         print(head_pos)
         if position is None:
             position = [[2048 ,2048, 2048, 2048],
@@ -459,7 +485,7 @@ class ControlCmd:
         self.motors['lumbar_y'].writePosition(int(2048+lumbar_pos[0]))
         self.motors['lumbar_z'].writePosition(int(2048+lumbar_pos[1]))
         self.motors['head'].writePosition(int(2048+head_pos[0]))
-        self.motors['mouth'].writePosition(int(2048+head_pos[1]))
+        self.motors['mouth'].writePosition(int(2048+mouth_pos[0]))
         self.dynamixel.sentAllCmd()
 
 def main():

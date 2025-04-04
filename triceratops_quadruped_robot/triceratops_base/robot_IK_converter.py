@@ -61,7 +61,7 @@ class JointStateRecorder(Node):
         # Create the subscriber
         self.subscription = self.create_subscription(
             JointState,
-            'joint_states',
+            'joint_states_play',
             self.joint_callback,
             10)
         
@@ -107,7 +107,7 @@ class JointStateRecorder(Node):
         # Process each leg
         for i, leg in enumerate(leg_order):
             # Get raw coordinates from message
-            y, z, x = msg.x[i], msg.y[i], msg.z[i]
+            y, z, x = -msg.x[i], msg.y[i], msg.z[i]
             
             # Store the original endpoint coordinates with origin bias
             origin_x, origin_y, origin_z = self.leg_origins[leg]
